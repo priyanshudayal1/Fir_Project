@@ -1,0 +1,7 @@
+gTTS>=2.3.2
+pygame>=2.5.0
+# Optional HuggingFace dependencies
+transformers>=4.30.0
+soundfile>=0.12.1
+numpy>=1.24.0
+torch>=2.0.0

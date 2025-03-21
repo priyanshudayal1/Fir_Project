@@ -1,7 +1,6 @@
 from gpt import callGPT
 import re
-import requests
-import json
+
 
 def extract_legal_sections(transcribed_text, personal_info=None, language='english', source_url=None):
     """
@@ -21,12 +20,6 @@ def extract_legal_sections(transcribed_text, personal_info=None, language='engli
     try:
         # Extract legal information from URL if provided
         extracted_legal_info = {}
-        if source_url:
-            extracted_legal_info = extract_from_url(source_url)
-        
-        # Default to devgan.in legal database if no source_url is provided
-        if not source_url and not extracted_legal_info:
-            extracted_legal_info = extract_from_url("https://devgan.in/#bareacts")
         
         # Prepare a structured description including extracted information
         incident_description = transcribed_text
@@ -267,108 +260,3 @@ def extract_legal_sections(transcribed_text, personal_info=None, language='engli
         return {"error": f"Request failed: {str(e)}"}
 
 
-def extract_from_url(url):
-    """
-    Extract legal information from a provided URL using ChatGPT API.
-    
-    Args:
-        url (str): URL of the legal resource to extract information from
-        
-    Returns:
-        dict: Dictionary containing extracted legal information
-    """
-    try:
-        # Define the system prompt for ChatGPT to extract information from devgan.in
-        system_prompt = """
-        You are a legal information extraction assistant. Your task is to extract legal information from the provided URL.
-        Focus specifically on extracting:
-        1. Names of legal acts (e.g., "Bharatiya Nyaya Sanhita", "Indian Penal Code", etc.)
-        2. Section numbers mentioned (e.g., "304B", "498A", etc.)
-        
-        If the URL is https://devgan.in/#bareacts or a specific page from devgan.in, you should:
-        - Extract information about the major Indian legal acts like Bharatiya Nyaya Sanhita (BNS), Bharatiya Nagarik Suraksha Sanhita (BNSS), 
-          Bharatiya Sakshya Adhiniyam (BSA), Indian Penal Code (IPC), Criminal Procedure Code (CrPC), etc.
-        - Include commonly used sections for criminal and civil cases.
-        
-        Format your response as valid JSON with the following structure:
-        {
-          "source_url": "the URL you analyzed",
-          "acts": ["Act 1", "Act 2", ...],
-          "sections": ["Section 1", "Section 2", ...]
-        }
-        
-        Provide only the JSON response without additional text or explanation.
-        """
-        
-        # Define the user prompt based on the URL
-        if "devgan.in" in url:
-            user_prompt = f"""
-            Extract legal information from the Devgan's Bare Acts website at {url}.
-            
-            This is a comprehensive Indian legal database containing information about all major Indian laws, including:
-            1. Bharatiya Nyaya Sanhita (BNS) - which replaced the Indian Penal Code
-            2. Bharatiya Nagarik Suraksha Sanhita (BNSS) - which replaced the Criminal Procedure Code
-            3. Bharatiya Sakshya Adhiniyam (BSA) - which replaced the Indian Evidence Act
-            4. Other important legal acts and their sections
-            
-            Please extract the names of the major acts and their commonly used sections.
-            """
-        else:
-            user_prompt = f"Extract legal information from the following URL: {url}"
-            
-        # Call GPT API to extract information
-        response = callGPT(system_prompt, user_prompt)
-        
-        # Parse the JSON response
-        try:
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
-                extracted_info = json.loads(json_str)
-                
-                # Ensure the extracted data has the required fields
-                if "acts" not in extracted_info:
-                    extracted_info["acts"] = []
-                if "sections" not in extracted_info:
-                    extracted_info["sections"] = []
-                if "source_url" not in extracted_info:
-                    extracted_info["source_url"] = url
-                    
-                return extracted_info
-            else:
-                # If we couldn't extract JSON, return a default structure
-                return {
-                    "source_url": url,
-                    "acts": [
-                        "Bharatiya Nyaya Sanhita",
-                        "Bharatiya Nagarik Suraksha Sanhita",
-                        "Bharatiya Sakshya Adhiniyam",
-                        "Indian Penal Code",
-                        "Criminal Procedure Code",
-                        "Information Technology Act"
-                    ],
-                    "sections": ["307", "302", "304", "326", "376", "420", "509", "354", "498A"],
-                    "note": "Default data used as extraction failed"
-                }
-                
-        except Exception as json_error:
-            # Return default structure if JSON parsing fails
-            return {
-                "source_url": url,
-                "acts": [
-                    "Bharatiya Nyaya Sanhita",
-                    "Bharatiya Nagarik Suraksha Sanhita",
-                    "Bharatiya Sakshya Adhiniyam",
-                    "Indian Penal Code",
-                    "Criminal Procedure Code",
-                    "Information Technology Act"
-                ],
-                "sections": ["307", "302", "304", "326", "376", "420", "509", "354", "498A"],
-                "error": str(json_error)
-            }
-            
-    except Exception as e:
-        return {
-            "error": f"Failed to extract from URL: {str(e)}",
-            "source_url": url
-        }

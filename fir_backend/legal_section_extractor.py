@@ -1,5 +1,6 @@
 from gpt import callGPT
 import re
+import json
 
 
 def extract_legal_sections(transcribed_text, personal_info=None, language='english', source_url=None):

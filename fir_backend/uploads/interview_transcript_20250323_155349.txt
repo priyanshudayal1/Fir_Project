@@ -1,0 +1,14 @@
+Q: Can you tell me your full name, please?
+A:  Saaar Thakte Wali
+
+Q: Could you also share your father's or husband's name?
+A:  Arvind.
+
+Q: What is your date of birth and nationality?
+A:  My date of birth is 20th October 2004 and my nationality is Indian.
+
+Q: Can you please tell me about the incident? Start from the beginning and include important details like the date, time, what exactly happened, and where it took place.
+A:  On 29 September 2024, I was going to the college for my mid semester exams around 10.45. A rickshaw driver just started driving in front of me and I got crashed. My scooter got crashed in the rickshaw.
+
+Q: Do you know who committed the crime?
+A:  I don't know his name but he was rash driving and he was a rickshaw driver.

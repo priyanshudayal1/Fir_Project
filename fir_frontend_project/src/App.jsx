@@ -74,6 +74,7 @@ const App = () => {
     resetForm,
     processCompleteInterview,
     firDraft,
+    transcribedText,
   } = useFIRStore();
 
   // Add state for option selection
@@ -261,21 +262,108 @@ const App = () => {
                 >
                   <span>← Back to Options</span>
                 </motion.button>
+
+                {/* Show analysis components if we have transcribed text */}
+                {transcribedText && (
+                  <div className="mt-8">
+                    <TranscriptDisplay />
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                      <CrimePredictions />
+                      <LegalSections />
+                    </div>
+                  </div>
+                )}
               </div>
             ) : selectedOption === "upload" ? (
-              // Single Audio Upload UI
-              <div className="max-w-3xl mx-auto">
-                <SingleAudioUploader language={selectedLanguage} />
-                <motion.button
-                  className="mt-4 px-4 py-2 text-gray-600 hover:text-gray-800 flex items-center gap-2"
-                  onClick={() => {
-                    setSelectedOption(null);
-                  }}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+              // Single Audio Upload UI with analysis
+              <div className="max-w-5xl mx-auto">
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5 }}
                 >
-                  <span>← Back to Options</span>
-                </motion.button>
+                  <SingleAudioUploader language={selectedLanguage} />
+                  <motion.button
+                    className="mt-4 px-4 py-2 text-gray-600 hover:text-gray-800 flex items-center gap-2"
+                    onClick={() => {
+                      setSelectedOption(null);
+                    }}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <span>← Back to Options</span>
+                  </motion.button>
+                </motion.div>
+
+                {transcribedText && (
+                  <motion.div
+                    className="mt-8"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.5, delay: 0.4 }}
+                  >
+                    {/* Transcript Display */}
+                    <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+                      <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                        <span className="bg-blue-100 text-blue-800 p-1 rounded">
+                          📝
+                        </span>
+                        Transcript Analysis
+                      </h2>
+                      <TranscriptDisplay />
+                    </div>
+
+                    {/* Analysis Components in Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                      <motion.div
+                        className="bg-white rounded-lg shadow-sm p-6"
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.5, delay: 0.6 }}
+                      >
+                        <CrimePredictions />
+                      </motion.div>
+                      <motion.div
+                        className="bg-white rounded-lg shadow-sm p-6"
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.5, delay: 0.7 }}
+                      >
+                        <LegalSections />
+                      </motion.div>
+                    </div>
+
+                    {/* FIR Draft Section */}
+                    {firDraft && (
+                      <motion.div
+                        className="bg-white rounded-lg shadow-lg p-8 mb-6"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, delay: 0.8 }}
+                      >
+                        <div className="border-b border-gray-200 pb-4 mb-6">
+                          <h2 className="text-2xl font-semibold text-gray-800 flex items-center gap-3">
+                            <span className="bg-blue-100 text-blue-800 p-2 rounded-lg">
+                              📋
+                            </span>
+                            First Information Report Draft
+                          </h2>
+                          <p className="text-gray-600 mt-2">
+                            Review and edit the generated FIR based on the
+                            analysis above
+                          </p>
+                        </div>
+                        <div className="max-h-[600px] overflow-y-auto custom-scrollbar">
+                          <FIRDraftDisplay
+                            firDraft={firDraft}
+                            firFields={firFields}
+                            onFieldChange={handleFirFieldChange}
+                          />
+                        </div>
+                      </motion.div>
+                    )}
+                  </motion.div>
+                )}
               </div>
             ) : (
               // FIR generation UI (after interview is complete)

@@ -212,7 +212,7 @@ const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
       };
     } catch (error) {
       console.error("TTS Error:", error);
-      setError("Failed to play audio. Please try again.");
+      // setError("Failed to play audio. Please try again.");
       setIsPlayingQuestion(false);
 
       // Clean up any partial audio state
@@ -466,7 +466,7 @@ const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
         readyState: e.target?.readyState,
         networkState: e.target?.networkState,
       });
-      setError("Error loading audio. Please try again.");
+      // setError("Error loading audio. Please try again.");
       setIsPlayingQuestion(false);
     };
 

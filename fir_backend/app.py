@@ -332,6 +332,7 @@ def upload_single_audio_file():
         # Extract legal sections
         logging.info(f"Extracting legal sections with language: {language}")
         legal_sections_result = extract_legal_sections(transcribed_text, personal_info, language)
+        print('legal_sections_result:', legal_sections_result)
         if "error" in legal_sections_result:
             return jsonify({"error": "Failed to extract legal sections"}), 500
             

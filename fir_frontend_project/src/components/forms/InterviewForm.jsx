@@ -14,30 +14,31 @@ import {
   FaArrowRight,
   FaTimes,
   FaVolumeUp,
+  FaCheck,
 } from "react-icons/fa";
 import useFIRStore from "../../store/useFIRStore";
 
 const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [recordedTime, setRecordedTime] = useState(0);
   const [welcomeAudioUrl, setWelcomeAudioUrl] = useState(null);
   const [isPlayingWelcome, setIsPlayingWelcome] = useState(false);
   const [hasPlayedWelcome, setHasPlayedWelcome] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  
+  // New state for tracking recordings for each question
+  const [questionRecordings, setQuestionRecordings] = useState({});
+  const [activeQuestionIndex, setActiveQuestionIndex] = useState(null);
+  const [recordedTimes, setRecordedTimes] = useState({});
+  const [playingQuestionIndex, setPlayingQuestionIndex] = useState(null);
   const [audioProgress, setAudioProgress] = useState(0);
-
-  const recordingTimerRef = useRef(null);
-  const questionAudioRef = useRef(null);
-  const recordedAudioRef = useRef(null);
+  
   const welcomeAudioRef = useRef(null);
-
+  const recordingTimerRef = useRef(null);
+  const audioRefs = useRef({});
+  
   const {
     isRecording,
     setIsRecording,
     setAudioChunks,
-    recordedAudio,
-    setRecordedAudio,
     mediaRecorder,
     setMediaRecorder,
     error,
@@ -48,10 +49,7 @@ const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
     setIsPlayingQuestion,
   } = useFIRStore();
 
-  const currentQuestion = questions[currentQuestionIndex];
-
   // Welcome message content based on language
-  // Replace the current welcomeMessages declaration with this:
   const welcomeMessages = useMemo(
     () => ({
       english:
@@ -63,177 +61,6 @@ const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
     }),
     []
   );
-
-  const playQuestionTTS = useCallback(async () => {
-    try {
-      // Don't try to play questions while welcome is playing
-      if (isPlayingWelcome) return;
-
-      setError(null);
-
-      // Create new audio element if needed
-      if (!questionAudioRef.current) {
-        const audio = new Audio();
-        audio.preload = "auto";
-        questionAudioRef.current = audio;
-      }
-
-      // Clean up any existing audio playback
-      questionAudioRef.current.pause();
-      if (questionAudioRef.current.src) {
-        URL.revokeObjectURL(questionAudioRef.current.src);
-        questionAudioRef.current.src = "";
-      }
-
-      const questionText =
-        typeof currentQuestion === "object"
-          ? currentQuestion.question
-          : currentQuestion;
-
-      setIsPlayingQuestion(true);
-
-      // Try cached audio first
-      if (questionAudios[currentQuestionIndex]) {
-        try {
-          const audioBlob = questionAudios[currentQuestionIndex];
-          const audioUrl = URL.createObjectURL(audioBlob);
-
-          await new Promise((resolve, reject) => {
-            let loadTimeout;
-
-            const handleCanPlay = () => {
-              clearTimeout(loadTimeout);
-              cleanup();
-              resolve();
-            };
-
-            const handleError = (e) => {
-              clearTimeout(loadTimeout);
-              cleanup();
-              reject(new Error(`Failed to load cached audio: ${e.message}`));
-            };
-
-            const cleanup = () => {
-              questionAudioRef.current.removeEventListener(
-                "canplaythrough",
-                handleCanPlay
-              );
-              questionAudioRef.current.removeEventListener(
-                "error",
-                handleError
-              );
-            };
-
-            // Set timeout for loading
-            loadTimeout = setTimeout(() => {
-              cleanup();
-              reject(new Error("Audio loading timed out"));
-            }, 5000);
-
-            questionAudioRef.current.addEventListener(
-              "canplaythrough",
-              handleCanPlay
-            );
-            questionAudioRef.current.addEventListener("error", handleError);
-
-            questionAudioRef.current.src = audioUrl;
-            questionAudioRef.current.load();
-          });
-
-          await questionAudioRef.current.play();
-
-          questionAudioRef.current.onended = () => {
-            URL.revokeObjectURL(audioUrl);
-            setIsPlayingQuestion(false);
-          };
-
-          return;
-        } catch (playError) {
-          console.error("Error playing cached audio:", playError);
-          // Continue to generate new audio if cached playback fails
-        }
-      }
-
-      // Generate new audio
-      const audioBlob = await useInterviewStore
-        .getState()
-        .generateQuestionSpeech(questionText, language);
-
-      // Cache the audio blob
-      cacheQuestionAudio(currentQuestionIndex, audioBlob);
-
-      // Play the new audio
-      const audioUrl = URL.createObjectURL(audioBlob);
-
-      await new Promise((resolve, reject) => {
-        let loadTimeout;
-
-        const handleCanPlay = () => {
-          clearTimeout(loadTimeout);
-          cleanup();
-          resolve();
-        };
-
-        const handleError = (e) => {
-          clearTimeout(loadTimeout);
-          cleanup();
-          reject(new Error(`Failed to load generated audio: ${e.message}`));
-        };
-
-        const cleanup = () => {
-          questionAudioRef.current.removeEventListener(
-            "canplaythrough",
-            handleCanPlay
-          );
-          questionAudioRef.current.removeEventListener("error", handleError);
-        };
-
-        // Set timeout for loading
-        loadTimeout = setTimeout(() => {
-          cleanup();
-          reject(new Error("Audio loading timed out"));
-        }, 5000);
-
-        questionAudioRef.current.addEventListener(
-          "canplaythrough",
-          handleCanPlay
-        );
-        questionAudioRef.current.addEventListener("error", handleError);
-
-        questionAudioRef.current.src = audioUrl;
-        questionAudioRef.current.load();
-      });
-
-      await questionAudioRef.current.play();
-
-      questionAudioRef.current.onended = () => {
-        URL.revokeObjectURL(audioUrl);
-        setIsPlayingQuestion(false);
-      };
-    } catch (error) {
-      console.error("TTS Error:", error);
-      // setError("Failed to play audio. Please try again.");
-      setIsPlayingQuestion(false);
-
-      // Clean up any partial audio state
-      if (questionAudioRef.current) {
-        questionAudioRef.current.pause();
-        if (questionAudioRef.current.src) {
-          URL.revokeObjectURL(questionAudioRef.current.src);
-          questionAudioRef.current.src = "";
-        }
-      }
-    }
-  }, [
-    currentQuestion,
-    language,
-    currentQuestionIndex,
-    questionAudios,
-    cacheQuestionAudio,
-    setError,
-    setIsPlayingQuestion,
-    isPlayingWelcome,
-  ]);
 
   // Function to play welcome message
   const playWelcomeMessage = useCallback(async () => {
@@ -266,21 +93,14 @@ const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
 
         welcomeAudioRef.current.addEventListener("ended", () => {
           setIsPlayingWelcome(false);
-          // Play the first question after welcome message ends
-          setTimeout(() => {
-            playQuestionTTS();
-          }, 500);
+          setHasPlayedWelcome(true);
         });
 
         welcomeAudioRef.current.addEventListener("error", (e) => {
           console.error("Welcome audio error:", e);
           setIsPlayingWelcome(false);
-          setError("Failed to play welcome message");
-
-          // Still try to play the question if welcome fails
-          setTimeout(() => {
-            playQuestionTTS();
-          }, 500);
+          // setError("Failed to play welcome message");
+          setHasPlayedWelcome(true);
         });
       }
 
@@ -290,12 +110,8 @@ const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
     } catch (error) {
       console.error("Error playing welcome message:", error);
       setIsPlayingWelcome(false);
-      setError("Failed to play welcome message");
-
-      // Still try to play the question if welcome fails
-      setTimeout(() => {
-        playQuestionTTS();
-      }, 500);
+      // setError("Failed to play welcome message");
+      setHasPlayedWelcome(true);
     }
   }, [
     language,
@@ -303,26 +119,141 @@ const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
     welcomeAudioUrl,
     setError,
     setIsPlayingWelcome,
-    playQuestionTTS,
   ]);
 
-  // Add recording timer
-  useEffect(() => {
-    if (isRecording) {
-      recordingTimerRef.current = setInterval(() => {
-        setRecordedTime((prev) => prev + 1);
-      }, 1000);
-    } else {
-      clearInterval(recordingTimerRef.current);
+  // Play question TTS
+  const playQuestionTTS = useCallback(async (questionIndex) => {
+    try {
+      if (isPlayingWelcome) return;
+
+      setError(null);
+      setPlayingQuestionIndex(questionIndex);
+      setIsPlayingQuestion(true);
+
+      const questionText = typeof questions[questionIndex] === "object"
+        ? questions[questionIndex].question
+        : questions[questionIndex];
+
+      // Create audio element if it doesn't exist
+      if (!audioRefs.current[questionIndex]) {
+        audioRefs.current[questionIndex] = new Audio();
+        audioRefs.current[questionIndex].preload = "auto";
+      }
+
+      const audioElement = audioRefs.current[questionIndex];
+      
+      // Clean up any existing audio
+      audioElement.pause();
+      if (audioElement.src) {
+        URL.revokeObjectURL(audioElement.src);
+        audioElement.src = "";
+      }
+
+      // Try to use cached audio first
+      if (questionAudios[questionIndex]) {
+        try {
+          const audioBlob = questionAudios[questionIndex];
+          const audioUrl = URL.createObjectURL(audioBlob);
+
+          await new Promise((resolve, reject) => {
+            const handleCanPlay = () => {
+              cleanup();
+              resolve();
+            };
+
+            const handleError = (e) => {
+              cleanup();
+              reject(new Error(`Failed to load cached audio: ${e.message}`));
+            };
+
+            const cleanup = () => {
+              audioElement.removeEventListener("canplaythrough", handleCanPlay);
+              audioElement.removeEventListener("error", handleError);
+            };
+
+            audioElement.addEventListener("canplaythrough", handleCanPlay);
+            audioElement.addEventListener("error", handleError);
+
+            audioElement.src = audioUrl;
+            audioElement.load();
+          });
+
+          await audioElement.play();
+
+          audioElement.onended = () => {
+            URL.revokeObjectURL(audioUrl);
+            setIsPlayingQuestion(false);
+            setPlayingQuestionIndex(null);
+          };
+
+          return;
+        } catch (playError) {
+          console.error("Error playing cached audio:", playError);
+          // Continue to generate new audio if cached playback fails
+        }
+      }
+
+      // Generate new audio
+      const audioBlob = await useInterviewStore
+        .getState()
+        .generateQuestionSpeech(questionText, language);
+
+      // Cache the audio blob
+      cacheQuestionAudio(questionIndex, audioBlob);
+
+      // Play the new audio
+      const audioUrl = URL.createObjectURL(audioBlob);
+
+      await new Promise((resolve, reject) => {
+        const handleCanPlay = () => {
+          cleanup();
+          resolve();
+        };
+
+        const handleError = (e) => {
+          cleanup();
+          reject(new Error(`Failed to load generated audio: ${e.message}`));
+        };
+
+        const cleanup = () => {
+          audioElement.removeEventListener("canplaythrough", handleCanPlay);
+          audioElement.removeEventListener("error", handleError);
+        };
+
+        audioElement.addEventListener("canplaythrough", handleCanPlay);
+        audioElement.addEventListener("error", handleError);
+
+        audioElement.src = audioUrl;
+        audioElement.load();
+      });
+
+      await audioElement.play();
+
+      audioElement.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        setIsPlayingQuestion(false);
+        setPlayingQuestionIndex(null);
+      };
+    } catch (error) {
+      console.error("TTS Error:", error);
+      setIsPlayingQuestion(false);
+      setPlayingQuestionIndex(null);
+
+      // Clean up any partial audio state
+      if (audioRefs.current[questionIndex]) {
+        audioRefs.current[questionIndex].pause();
+        if (audioRefs.current[questionIndex].src) {
+          URL.revokeObjectURL(audioRefs.current[questionIndex].src);
+          audioRefs.current[questionIndex].src = "";
+        }
+      }
     }
-    return () => clearInterval(recordingTimerRef.current);
-  }, [isRecording]);
+  }, [questions, language, questionAudios, cacheQuestionAudio, setError, setIsPlayingQuestion, isPlayingWelcome]);
 
   // Play welcome message when component mounts and language is available
   useEffect(() => {
     if (language && !hasPlayedWelcome) {
       playWelcomeMessage();
-      setHasPlayedWelcome(true);
     }
   }, [language, hasPlayedWelcome, playWelcomeMessage]);
 
@@ -335,6 +266,22 @@ const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
     };
   }, [welcomeAudioUrl]);
 
+  // Add recording timer for active question
+  useEffect(() => {
+    if (isRecording && activeQuestionIndex !== null) {
+      recordingTimerRef.current = setInterval(() => {
+        setRecordedTimes(prev => ({
+          ...prev,
+          [activeQuestionIndex]: (prev[activeQuestionIndex] || 0) + 1
+        }));
+      }, 1000);
+    } else {
+      clearInterval(recordingTimerRef.current);
+    }
+    return () => clearInterval(recordingTimerRef.current);
+  }, [isRecording, activeQuestionIndex]);
+
+  // Format time helper
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -343,251 +290,353 @@ const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
       .padStart(2, "0")}`;
   };
 
-  const startRecording = async () => {
+  // Start recording for a specific question
+  const startRecording = async (questionIndex) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      const chunks = [];
+      // Stop any ongoing recording
+      if (isRecording) {
+        stopRecording();
+      }
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunks.push(e.data);
-        }
-      };
-
-      recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: "audio/webm" });
-        setRecordedAudio(blob);
-        setAudioChunks(chunks);
-
-        // Clean up any existing audio URL before creating a new one
-        if (recordedAudioRef.current?.src) {
-          URL.revokeObjectURL(recordedAudioRef.current.src);
-          recordedAudioRef.current.src = "";
-        }
-
-        // Create and set new audio URL with proper cleanup
-        if (recordedAudioRef.current) {
-          const audioUrl = URL.createObjectURL(blob);
-          recordedAudioRef.current.src = audioUrl;
-
-          // Clean up URL when audio ends or errors
-          const cleanup = () => {
-            if (recordedAudioRef.current) {
-              URL.revokeObjectURL(audioUrl);
-              recordedAudioRef.current.removeEventListener("ended", cleanup);
-              recordedAudioRef.current.removeEventListener("error", cleanup);
-            }
-          };
-
-          recordedAudioRef.current.addEventListener("ended", cleanup);
-          recordedAudioRef.current.addEventListener("error", cleanup);
-        }
-      };
-
-      setMediaRecorder(recorder);
-      recorder.start();
-      setIsRecording(true);
-      setRecordedTime(0);
+      // Request microphone access with better error handling
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { 
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
+      
+      // Set up media recorder with higher bitrate for better quality
+      const options = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 128000 };
+      
+      // Check for browser support of the specified mimetype
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        console.warn(`${options.mimeType} is not supported, using default codec`);
+        // Fall back to default
+        const recorder = new MediaRecorder(stream);
+        initializeRecorder(recorder, stream, questionIndex);
+      } else {
+        const recorder = new MediaRecorder(stream, options);
+        initializeRecorder(recorder, stream, questionIndex);
+      }
     } catch (error) {
       console.error("Error starting recording:", error);
-      setError("Could not access microphone. Please check permissions.");
+      setError(`Could not access microphone: ${error.message}`);
     }
   };
 
+  // Helper function to initialize recorder
+  const initializeRecorder = (recorder, stream, questionIndex) => {
+    const chunks = [];
+    
+    // Set up data available handler
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) {
+        chunks.push(e.data);
+        console.log(`Received audio chunk: ${e.data.size} bytes`);
+      } else {
+        console.warn("Empty audio chunk received");
+      }
+    };
+
+    // Set up stop handler with validation
+    recorder.onstop = () => {
+      if (chunks.length === 0) {
+        console.error("No audio chunks collected");
+        setError("No audio data was recorded. Please try again.");
+        return;
+      }
+      
+      // Log total size of all chunks
+      const totalBytes = chunks.reduce((sum, chunk) => sum + chunk.size, 0);
+      console.log(`Total audio data: ${totalBytes} bytes in ${chunks.length} chunks`);
+      
+      if (totalBytes === 0) {
+        setError("Recording was empty. Please try speaking louder or check your microphone.");
+        return;
+      }
+      
+      // Create blob with explicit type
+      const blob = new Blob(chunks, { type: 'audio/webm' });
+      console.log(`Created audio blob: ${blob.size} bytes, type: ${blob.type}`);
+      
+      if (blob.size < 100) {
+        console.warn("Audio blob is suspiciously small");
+        setError("Recording appears to be too small. Please try again and speak clearly.");
+        return;
+      }
+      
+      // Store the recording for this question
+      setQuestionRecordings(prev => ({
+        ...prev,
+        [questionIndex]: blob
+      }));
+      
+      setAudioChunks(chunks);
+
+      // Create and set up audio element for playback
+      if (!audioRefs.current[`recording_${questionIndex}`]) {
+        audioRefs.current[`recording_${questionIndex}`] = new Audio();
+      }
+      
+      const audioElement = audioRefs.current[`recording_${questionIndex}`];
+      
+      // Clean up any existing audio URL
+      if (audioElement.src) {
+        URL.revokeObjectURL(audioElement.src);
+      }
+      
+      const audioUrl = URL.createObjectURL(blob);
+      audioElement.src = audioUrl;
+      
+      // Test playability of the blob
+      audioElement.addEventListener('canplaythrough', () => {
+        console.log(`Audio for question ${questionIndex} is playable`);
+      }, { once: true });
+      
+      audioElement.addEventListener('error', (e) => {
+        console.error(`Error loading audio for question ${questionIndex}:`, e);
+      }, { once: true });
+      
+      // Set up event listeners for playback tracking
+      audioElement.addEventListener("ended", () => {
+        setPlayingQuestionIndex(null);
+        setAudioProgress(0);
+      });
+      
+      audioElement.addEventListener("timeupdate", () => {
+        const progress = (audioElement.currentTime / audioElement.duration) * 100;
+        setAudioProgress(progress);
+      });
+    };
+
+    // Handle recording errors
+    recorder.onerror = (event) => {
+      console.error("Recorder error:", event);
+      setError(`Recording error: ${event.name}`);
+      
+      // Clean up stream on error
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+
+    // Configure for frequent data events on longer recordings
+    try {
+      // Request data every second instead of waiting until stop
+      recorder.start(1000);
+      console.log(`Started recording for question ${questionIndex}`);
+      
+      setMediaRecorder(recorder);
+      setIsRecording(true);
+      setActiveQuestionIndex(questionIndex);
+      
+      // Initialize the recorded time for this question
+      setRecordedTimes(prev => ({
+        ...prev,
+        [questionIndex]: 0
+      }));
+    } catch (error) {
+      console.error("Error starting recorder:", error);
+      setError(`Could not start recording: ${error.message}`);
+      
+      // Clean up stream if recorder fails to start
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    }
+  };
+
+  // Stop the current recording
   const stopRecording = () => {
     if (mediaRecorder && mediaRecorder.state === "recording") {
       mediaRecorder.stop();
       setIsRecording(false);
+      setActiveQuestionIndex(null);
       mediaRecorder.stream.getTracks().forEach((track) => track.stop());
     }
   };
 
-  // Enhanced playRecordedAudio with play/pause toggle
-  const playRecordedAudio = () => {
-    if (!recordedAudio || !recordedAudioRef.current) return;
-
-    if (isPlaying) {
-      // If playing, pause it
-      recordedAudioRef.current.pause();
-      setIsPlaying(false);
+  // Play recording for a specific question
+  const playRecording = (questionIndex) => {
+    if (!questionRecordings[questionIndex]) return;
+    
+    const audioKey = `recording_${questionIndex}`;
+    
+    // If already playing this recording, stop it
+    if (playingQuestionIndex === questionIndex) {
+      audioRefs.current[audioKey].pause();
+      setPlayingQuestionIndex(null);
       return;
     }
-
-    // Reset the audio element if it's finished
-    if (recordedAudioRef.current.ended) {
-      recordedAudioRef.current.currentTime = 0;
+    
+    // Stop any currently playing audio
+    if (playingQuestionIndex !== null) {
+      const currentAudioKey = `recording_${playingQuestionIndex}`;
+      if (audioRefs.current[currentAudioKey]) {
+        audioRefs.current[currentAudioKey].pause();
+      }
     }
-
-    // Create and set new audio URL if not already set
-    if (!recordedAudioRef.current.src) {
-      const audioUrl = URL.createObjectURL(recordedAudio);
-      recordedAudioRef.current.src = audioUrl;
-
-      // Add cleanup for the URL
-      recordedAudioRef.current.onended = () => {
-        URL.revokeObjectURL(audioUrl);
-        setIsPlaying(false);
-        setAudioProgress(0);
-      };
-
-      // Add progress tracking
-      recordedAudioRef.current.ontimeupdate = () => {
-        const progress =
-          (recordedAudioRef.current.currentTime /
-            recordedAudioRef.current.duration) *
-          100;
-        setAudioProgress(progress);
-      };
+    
+    // Play the selected recording
+    const audioElement = audioRefs.current[audioKey];
+    if (audioElement) {
+      // Reset if ended
+      if (audioElement.ended) {
+        audioElement.currentTime = 0;
+      }
+      
+      audioElement.play()
+        .then(() => {
+          setPlayingQuestionIndex(questionIndex);
+        })
+        .catch((error) => {
+          console.error("Error playing recorded audio:", error);
+          setError("Failed to play recorded audio");
+        });
     }
-
-    // Play the audio
-    recordedAudioRef.current
-      .play()
-      .then(() => {
-        setIsPlaying(true);
-      })
-      .catch((error) => {
-        console.error("Error playing recorded audio:", error);
-        setError("Failed to play recorded audio");
-        setIsPlaying(false);
-      });
   };
 
-  // Initialize audio elements in useEffect with proper cleanup and error handling
-  useEffect(() => {
-    const audio = new Audio();
-    const recordedAudio = new Audio();
-
-    const handleAudioError = (e) => {
-      console.error("Audio error:", {
-        error: e,
-        currentSrc: e.target?.currentSrc,
-        readyState: e.target?.readyState,
-        networkState: e.target?.networkState,
-      });
-      // setError("Error loading audio. Please try again.");
-      setIsPlayingQuestion(false);
-    };
-
-    // Add error handling for audio elements
-    audio.addEventListener("error", handleAudioError);
-    recordedAudio.addEventListener("error", handleAudioError);
-
-    // Set audio properties
-    audio.preload = "auto";
-    recordedAudio.preload = "auto";
-
-    questionAudioRef.current = audio;
-    recordedAudioRef.current = recordedAudio;
-
-    return () => {
-      // Remove event listeners
-      audio.removeEventListener("error", handleAudioError);
-      recordedAudio.removeEventListener("error", handleAudioError);
-
-      // Cleanup audio elements
-      if (questionAudioRef.current) {
-        questionAudioRef.current.pause();
-        questionAudioRef.current.src = "";
-        URL.revokeObjectURL(questionAudioRef.current.src);
-        questionAudioRef.current = null;
+  // Handle form completion - process recordings sequentially instead of in parallel
+  const handleCompleteInterview = async () => {
+    // Check if we have recordings for all questions
+    const missingRecordings = questions.filter((_, index) => !questionRecordings[index]);
+    
+    if (missingRecordings.length > 0) {
+      setError(`Please record answers for all ${questions.length} questions before completing the interview.`);
+      return;
+    }
+    
+    try {
+      setIsProcessing(true);
+      setError(null);
+      
+      // Validate all recordings before processing
+      const invalidRecordings = Object.entries(questionRecordings).filter(
+        ([_, blob]) => !blob || blob.size < 1000 // Increase minimum size check
+      );
+      
+      if (invalidRecordings.length > 0) {
+        const invalidQuestions = invalidRecordings.map(([index]) => Number(index) + 1).join(', ');
+        setError(`Empty or too small recordings detected for questions: ${invalidQuestions}. Please re-record these answers.`);
+        setIsProcessing(false);
+        return;
       }
-      if (recordedAudioRef.current) {
-        recordedAudioRef.current.pause();
-        recordedAudioRef.current.src = "";
-        URL.revokeObjectURL(recordedAudioRef.current.src);
-        recordedAudioRef.current = null;
-      }
-    };
-  }, [setError, setIsPlayingQuestion]);
-
-  // Cleanup function for audio elements
-  useEffect(() => {
-    return () => {
-      if (recordedAudioRef.current) {
-        recordedAudioRef.current.pause();
-        if (recordedAudioRef.current.src) {
-          URL.revokeObjectURL(recordedAudioRef.current.src);
+      
+      console.log("Processing recordings:", Object.entries(questionRecordings).map(
+        ([index, blob]) => `Q${Number(index) + 1}: ${blob.size} bytes, type: ${blob.type}`
+      ));
+      
+      // Process recordings one at a time instead of in parallel
+      const transcriptionResults = [];
+      
+      // Set up sequential processing with progress updates
+      for (let index = 0; index < questions.length; index++) {
+        try {
+          // Update processing message to show current question
+          setError(`Processing question ${index + 1} of ${questions.length}...`);
+          
+          const blob = questionRecordings[index];
+          
+          // Double-check validity
+          if (!blob || blob.size < 1000) {
+            console.error(`Recording for question ${index + 1} is empty or too small (${blob?.size || 0} bytes)`);
+            transcriptionResults[index] = `[Error: Recording was too short or empty]`;
+            continue;
+          }
+          
+          // Convert webm to mp3 if needed (some servers handle mp3 better than webm)
+          const processedBlob = blob;
+          
+          // Make individual request with retries
+          let retryCount = 0;
+          let transcription = null;
+          
+          while (retryCount < 2 && !transcription) {
+            try {
+              transcription = await useInterviewStore.getState().transcribeAudio(processedBlob, language);
+              
+              if (!transcription || transcription.trim() === '') {
+                throw new Error("Empty transcription result");
+              }
+              
+              console.log(`Transcription for question ${index + 1} successful:`, transcription.substring(0, 50) + '...');
+            } catch (transcriptionError) {
+              retryCount++;
+              console.error(`Transcription attempt ${retryCount} failed for question ${index + 1}:`, transcriptionError);
+              
+              if (retryCount >= 2) {
+                transcription = `[Error: Failed to transcribe after ${retryCount} attempts]`;
+              } else {
+                // Short delay before retry
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+            }
+          }
+          
+          transcriptionResults[index] = transcription;
+          
+          // Store each answer as we go
+          onAnswer(index, transcription);
+          
+          // Short delay between requests to avoid overwhelming the server
+          if (index < questions.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        } catch (questionError) {
+          console.error(`Processing error for question ${index + 1}:`, questionError);
+          transcriptionResults[index] = `[Error: ${questionError.message || "Unknown error"}]`;
+          
+          // Continue with next question despite errors
+          continue;
         }
-        setIsPlaying(false);
-        setAudioProgress(0);
+      }
+      
+      // Construct the final statement
+      const statement = questions.map((question, index) => {
+        const questionText = typeof question === "object" ? question.question : question;
+        return `Q: ${questionText}\nA: ${transcriptionResults[index] || "[No transcription available]"}`;
+      }).join("\n\n");
+      
+      // Clear any processing error messages
+      setError(null);
+      
+      // Complete the interview
+      await onComplete(statement);
+      
+    } catch (error) {
+      console.error("Error processing answers:", error);
+      setError(`Failed to process your responses: ${error.message || "Unknown error"}. Please try again.`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Clean up all audio resources on unmount
+  useEffect(() => {
+    return () => {
+      // Clean up all audio elements
+      Object.values(audioRefs.current).forEach(audio => {
+        if (audio) {
+          audio.pause();
+          if (audio.src) {
+            URL.revokeObjectURL(audio.src);
+          }
+        }
+      });
+      
+      // Clean up welcome audio
+      if (welcomeAudioRef.current) {
+        welcomeAudioRef.current.pause();
+        if (welcomeAudioRef.current.src) {
+          URL.revokeObjectURL(welcomeAudioRef.current.src);
+        }
       }
     };
   }, []);
 
-  // Question TTS playback with caching
-
-  // Play question when component mounts or question changes, but only after welcome message is done
-  useEffect(() => {
-    if (currentQuestion && !isPlayingWelcome && hasPlayedWelcome) {
-      playQuestionTTS();
-    }
-  }, [currentQuestion, playQuestionTTS, isPlayingWelcome, hasPlayedWelcome]);
-
-  const handleNextQuestion = async () => {
-    if (!recordedAudio) return;
-
-    try {
-      setIsProcessing(true);
-      setError(null);
-
-      const transcribedText = await useInterviewStore
-        .getState()
-        .transcribeAudio(recordedAudio, language);
-
-      onAnswer(currentQuestionIndex, transcribedText);
-
-      // Handle follow-up questions if needed
-      if (typeof currentQuestion === "object" && currentQuestion.followUp) {
-        const isYes =
-          transcribedText.toLowerCase().includes("yes") ||
-          transcribedText.toLowerCase().includes("हाँ") ||
-          transcribedText.toLowerCase().includes("ਹਾਂ");
-
-        if (isYes && currentQuestion.followUp.yes) {
-          setCurrentQuestionIndex((prev) => prev + 1);
-        } else {
-          const statement = Object.entries(
-            useFIRStore.getState().interviewAnswers
-          )
-            .map(
-              ([index, answer]) =>
-                `Q: ${
-                  questions[index].question || questions[index]
-                }\nA: ${answer}`
-            )
-            .join("\n\n");
-          await onComplete(statement);
-        }
-      } else if (currentQuestionIndex === questions.length - 1) {
-        const statement = Object.entries(
-          useFIRStore.getState().interviewAnswers
-        )
-          .map(
-            ([index, answer]) =>
-              `Q: ${
-                questions[index].question || questions[index]
-              }\nA: ${answer}`
-          )
-          .join("\n\n");
-        await onComplete(statement);
-      } else {
-        setCurrentQuestionIndex((prev) => prev + 1);
-      }
-
-      setRecordedAudio(null);
-      setAudioChunks([]);
-    } catch (error) {
-      console.error("Error processing answer:", error);
-      setError("Failed to process your response. Please try again.");
-    } finally {
-      setIsProcessing(false);
-      setRecordedTime(0);
-    }
-  };
-
-  // Enhanced UI components
+  // UI for the interview form
   return (
     <motion.div
       className="p-6 bg-white rounded-lg shadow-sm"
@@ -627,217 +676,154 @@ const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
         )}
       </AnimatePresence>
 
-      {/* Question header with progress indicator */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-4">
-            <h3 className="text-lg font-semibold text-gray-800">
-              Question {currentQuestionIndex + 1} of {questions.length}
-            </h3>
-            <div className="h-2 w-32 bg-gray-200 rounded-full overflow-hidden">
-              <motion.div
-                className="h-full bg-blue-500"
-                initial={{ width: 0 }}
-                animate={{
-                  width: `${
-                    ((currentQuestionIndex + 1) / questions.length) * 100
-                  }%`,
-                }}
-                transition={{ duration: 0.5 }}
-              />
-            </div>
-          </div>
-          {/* ...existing buttons... */}
-        </div>
-
-        {/* Question text with loading animation */}
-        <div className="relative">
-          <p className="text-gray-700 text-xl mb-2">
-            {typeof currentQuestion === "object"
-              ? currentQuestion.question
-              : currentQuestion}
-          </p>
-          {isPlayingQuestion && (
-            <motion.div
-              className="absolute -left-6 top-1/2 transform -translate-y-1/2"
-              animate={{ scale: [1, 1.2, 1] }}
-              transition={{ duration: 1, repeat: Infinity }}
-            >
-              <div className="w-3 h-3 bg-blue-500 rounded-full" />
-            </motion.div>
-          )}
-        </div>
-      </div>
-
-      {/* Recording interface */}
-      <div className="flex flex-col items-center gap-6">
-        {!isRecording && !recordedAudio ? (
-          <motion.button
-            className="relative w-24 h-24 rounded-full bg-gradient-to-r from-blue-500 to-blue-600 flex items-center justify-center text-white text-3xl shadow-lg"
-            whileHover={{
-              scale: 1.05,
-              boxShadow: "0 8px 20px rgba(59, 130, 246, 0.3)",
-            }}
-            whileTap={{ scale: 0.95 }}
-            onClick={startRecording}
-            disabled={isPlayingQuestion || isPlayingWelcome}
-          >
-            <FaMicrophone />
-            <motion.div
-              className="absolute w-full h-full rounded-full border-4 border-blue-300"
-              animate={{
-                scale: [1, 1.2, 1],
-                opacity: [0.3, 0, 0.3],
-              }}
-              transition={{ duration: 2, repeat: Infinity }}
-            />
-          </motion.button>
-        ) : isRecording ? (
-          <div className="flex flex-col items-center gap-6">
-            <div className="relative">
-              <motion.div
-                className="w-32 h-32 rounded-full bg-red-100 flex items-center justify-center"
-                animate={{
-                  scale: [1, 1.05, 1],
-                  boxShadow: [
-                    "0 0 0 0 rgba(239, 68, 68, 0.2)",
-                    "0 0 0 15px rgba(239, 68, 68, 0)",
-                    "0 0 0 0 rgba(239, 68, 68, 0.2)",
-                  ],
-                }}
-                transition={{
-                  duration: 2,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                }}
+      {/* Questions List */}
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4">
+          Please answer all {questions.length} questions to complete your interview
+        </h3>
+        
+        <div className="space-y-6">
+          {questions.map((question, index) => {
+            const questionText = typeof question === "object" ? question.question : question;
+            const hasRecording = !!questionRecordings[index];
+            const isActiveQuestion = activeQuestionIndex === index;
+            const isPlayingRecording = playingQuestionIndex === index;
+            
+            return (
+              <motion.div 
+                key={index}
+                className={`p-4 rounded-lg border ${hasRecording ? 'border-green-200 bg-green-50' : 'border-gray-200'}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
               >
-                <div className="w-24 h-24 rounded-full bg-red-200 flex items-center justify-center">
-                  <div className="text-2xl font-bold text-red-600">
-                    {formatTime(recordedTime)}
+                <div className="flex items-start gap-4">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-500 font-semibold mt-1">
+                    {index + 1}
+                  </div>
+                  
+                  <div className="flex-grow">
+                    <div className="flex justify-between items-start mb-2">
+                      <h4 className="text-gray-700 font-medium">{questionText}</h4>
+                      
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => playQuestionTTS(index)}
+                        disabled={isPlayingQuestion || isPlayingWelcome}
+                        className="ml-2 text-blue-500 hover:text-blue-600"
+                      >
+                        <FaVolumeUp />
+                      </motion.button>
+                    </div>
+                    
+                    {/* Recording controls */}
+                    <div className="mt-3">
+                      {!isRecording && !hasRecording ? (
+                        <motion.button
+                          className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg"
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => startRecording(index)}
+                          disabled={isPlayingQuestion || isRecording}
+                        >
+                          <FaMicrophone />
+                          <span>Record Answer</span>
+                        </motion.button>
+                      ) : isActiveQuestion ? (
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-600 rounded-lg">
+                            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                            <span>{formatTime(recordedTimes[index] || 0)}</span>
+                          </div>
+                          
+                          <motion.button
+                            className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg"
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={stopRecording}
+                          >
+                            <FaStop />
+                            <span>Stop</span>
+                          </motion.button>
+                        </div>
+                      ) : hasRecording ? (
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <motion.button
+                              className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg"
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => playRecording(index)}
+                            >
+                              {isPlayingRecording ? <FaStop /> : <FaPlay />}
+                              <span>{isPlayingRecording ? "Stop" : "Play"}</span>
+                            </motion.button>
+                            
+                            <span className="text-sm text-gray-500 ml-2">
+                              {formatTime(recordedTimes[index] || 0)}
+                            </span>
+                            
+                            <FaCheck className="text-green-500 ml-2" />
+                          </div>
+                          
+                          <motion.button
+                            className="flex items-center gap-2 px-3 py-1 border border-blue-300 text-blue-600 rounded-lg"
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={() => startRecording(index)}
+                            disabled={isPlayingQuestion || isRecording}
+                          >
+                            <FaMicrophone />
+                            <span>Re-record</span>
+                          </motion.button>
+                        </div>
+                      ) : (
+                        <div className="text-gray-400 italic">
+                          Waiting for recording...
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </motion.div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Complete Interview button */}
+      <div className="flex justify-center mt-8">
+        <motion.button
+          className="py-3 px-8 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg shadow-md flex items-center justify-center gap-2 w-full max-w-md"
+          whileHover={{ scale: 1.02, y: -2 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={handleCompleteInterview}
+          disabled={isProcessing || isRecording || Object.keys(questionRecordings).length !== questions.length}
+        >
+          {isProcessing ? (
+            <>
               <motion.div
-                className="absolute inset-0 border-4 border-red-300 rounded-full"
-                animate={{
-                  scale: [1, 1.2, 1],
-                  opacity: [0.7, 0, 0.7],
-                }}
+                className="w-5 h-5 border-3 border-white border-t-transparent rounded-full"
+                animate={{ rotate: 360 }}
                 transition={{
-                  duration: 1.5,
+                  duration: 1,
                   repeat: Infinity,
-                  ease: "easeInOut",
+                  ease: "linear",
                 }}
               />
-              <motion.div
-                className="absolute inset-0 border-2 border-red-300 rounded-full"
-                animate={{
-                  scale: [1.1, 1.3, 1.1],
-                  opacity: [0.5, 0, 0.5],
-                }}
-                transition={{
-                  duration: 2,
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                  delay: 0.5,
-                }}
-              />
-            </div>
-            <motion.button
-              className="bg-red-500 hover:bg-red-600 text-white py-3 px-8 rounded-xl shadow-lg flex items-center gap-2"
-              onClick={stopRecording}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <FaStop />
-              <span className="font-semibold">Stop Recording</span>
-            </motion.button>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-4 w-full max-w-md">
-            <div className="w-full bg-gray-50 p-4 rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <motion.button
-                    className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white"
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={playRecordedAudio}
-                  >
-                    {isPlaying ? <FaStop /> : <FaPlay />}
-                  </motion.button>
-                  <span className="text-sm text-gray-500">
-                    {formatTime(recordedTime)}
-                  </span>
-                </div>
-              </div>
-              {/* Audio progress bar */}
-              <div className="h-2 bg-gray-200 rounded-full overflow-hidden mb-4">
-                <motion.div
-                  className="h-full bg-blue-500"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${audioProgress}%` }}
-                  transition={{ duration: 0.1 }}
-                />
-              </div>
-              {/* Audio waveform visualization */}
-              <div className="h-12 bg-gray-100 rounded-lg overflow-hidden flex items-center justify-around px-2">
-                {Array.from({ length: 40 }).map((_, i) => (
-                  <motion.div
-                    key={i}
-                    className="w-1 bg-blue-500 rounded-full"
-                    animate={{
-                      height: isPlaying
-                        ? [
-                            `${20 + Math.sin(i * 0.5) * 20}%`,
-                            `${20 + Math.cos(i * 0.5) * 20}%`,
-                          ]
-                        : "40%",
-                    }}
-                    transition={{
-                      duration: 1,
-                      repeat: Infinity,
-                      repeatType: "reverse",
-                      delay: i * 0.05,
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-            <motion.button
-              className="w-full py-3 px-6 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg shadow-md flex items-center justify-center gap-2"
-              whileHover={{ scale: 1.02, y: -2 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={handleNextQuestion}
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <>
-                  <motion.div
-                    className="w-5 h-5 border-3 border-white border-t-transparent rounded-full"
-                    animate={{ rotate: 360 }}
-                    transition={{
-                      duration: 1,
-                      repeat: Infinity,
-                      ease: "linear",
-                    }}
-                  />
-                  <span>Processing...</span>
-                </>
+              <span>Processing All Responses...</span>
+            </>
+          ) : (
+            <>
+              {Object.keys(questionRecordings).length === questions.length ? (
+                "Complete Interview"
               ) : (
-                <>
-                  {currentQuestionIndex === questions.length - 1 ? (
-                    "Complete Interview"
-                  ) : (
-                    <>
-                      Next Question <FaArrowRight />
-                    </>
-                  )}
-                </>
+                `Record All ${questions.length} Answers to Continue (${Object.keys(questionRecordings).length}/${questions.length})`
               )}
-            </motion.button>
-          </div>
-        )}
+            </>
+          )}
+        </motion.button>
       </div>
 
       {/* Error display */}

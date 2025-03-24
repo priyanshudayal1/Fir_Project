@@ -23,6 +23,7 @@ const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
   const [isPlayingWelcome, setIsPlayingWelcome] = useState(false);
   const [hasPlayedWelcome, setHasPlayedWelcome] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isLoadingWelcome, setIsLoadingWelcome] = useState(false);
   
   // New state for tracking recordings for each question
   const [questionRecordings, setQuestionRecordings] = useState({});
@@ -64,10 +65,15 @@ const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
 
   // Function to play welcome message
   const playWelcomeMessage = useCallback(async () => {
+    // Prevent multiple simultaneous calls
+    if (isLoadingWelcome || isPlayingWelcome || hasPlayedWelcome) return;
+    
     try {
+      setIsLoadingWelcome(true);
       setError(null);
 
       if (!language || !welcomeMessages[language]) {
+        setIsLoadingWelcome(false);
         return;
       }
 
@@ -94,13 +100,14 @@ const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
         welcomeAudioRef.current.addEventListener("ended", () => {
           setIsPlayingWelcome(false);
           setHasPlayedWelcome(true);
+          setIsLoadingWelcome(false);
         });
 
         welcomeAudioRef.current.addEventListener("error", (e) => {
           console.error("Welcome audio error:", e);
           setIsPlayingWelcome(false);
-          // setError("Failed to play welcome message");
           setHasPlayedWelcome(true);
+          setIsLoadingWelcome(false);
         });
       }
 
@@ -110,15 +117,17 @@ const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
     } catch (error) {
       console.error("Error playing welcome message:", error);
       setIsPlayingWelcome(false);
-      // setError("Failed to play welcome message");
       setHasPlayedWelcome(true);
+      setIsLoadingWelcome(false);
     }
   }, [
     language,
     welcomeMessages,
     welcomeAudioUrl,
     setError,
-    setIsPlayingWelcome,
+    isLoadingWelcome,
+    isPlayingWelcome,
+    hasPlayedWelcome,
   ]);
 
   // Play question TTS
@@ -252,10 +261,14 @@ const InterviewForm = ({ language, questions, onComplete, onAnswer }) => {
 
   // Play welcome message when component mounts and language is available
   useEffect(() => {
-    if (language && !hasPlayedWelcome) {
+    // Only attempt to play the welcome message if:
+    // 1. Language is available
+    // 2. Welcome message hasn't been played
+    // 3. Not currently loading or playing welcome message
+    if (language && !hasPlayedWelcome && !isLoadingWelcome && !isPlayingWelcome) {
       playWelcomeMessage();
     }
-  }, [language, hasPlayedWelcome, playWelcomeMessage]);
+  }, [language, hasPlayedWelcome, playWelcomeMessage, isLoadingWelcome, isPlayingWelcome]);
 
   // Clean up welcome audio URL when component unmounts
   useEffect(() => {
